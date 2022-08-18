@@ -65,6 +65,7 @@ router.post('/import', awaitHandlerFactory((req, res) => __awaiter(void 0, void 
     req.pipe(req.busboy);
     req.busboy.on('file', function (fileUploaded, file, filename) {
         console.log("Uploading: " + filename);
+        console.log(fileUploaded);
         //Path where image will be uploaded
         const filepath = __dirname + '/../tmp/' + filename;
         fstream = fsx.createWriteStream(filepath);
@@ -76,6 +77,11 @@ router.post('/import', awaitHandlerFactory((req, res) => __awaiter(void 0, void 
                 const source = fsx.readFileSync(filepath, { encoding: 'utf8', flag: 'r' });
                 yield definitions.save(name, source, null);
                 res.redirect('/');
+            });
+        });
+        fstream.on('error', function (err) {
+            return __awaiter(this, void 0, void 0, function* () {
+                console.log('error' + err);
             });
         });
     });

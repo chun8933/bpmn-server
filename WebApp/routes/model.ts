@@ -78,11 +78,16 @@ router.get('/import', awaitHandlerFactory(async (request, response) => {
             req.pipe(req.busboy);
             req.busboy.on('file', function (fileUploaded, file, filename) {
                 console.log("Uploading: " + filename);
+                console.log(fileUploaded);
+                
 
                 //Path where image will be uploaded
                 const filepath = __dirname + '/../tmp/' + filename;
+                
                 fstream = fsx.createWriteStream(filepath);
+                
                 file.pipe(fstream);
+                
                 fstream.on('close',async function () {
                     console.log("Upload Finished of " + filename);
                     const name = filename;
@@ -92,6 +97,10 @@ router.get('/import', awaitHandlerFactory(async (request, response) => {
 
                     res.redirect('/');
 
+                });
+                fstream.on('error', async function (err) {
+                    console.log('error' + err);
+                    
                 });
             });
 

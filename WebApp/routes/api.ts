@@ -5,10 +5,20 @@ import { ExecuteDecisionTable, ExecuteCondition, ExecuteExpression } from 'dmn-e
 
 const FS = require('fs');
 
-import { BPMNServer, dateDiff, Behaviour_names   } from '..';
-import { configuration as config} from '../configuration';
+// import { BPMNServer, dateDiff, Behaviour_names } from '..';
 
-const bpmnServer = new BPMNServer(config);
+
+import { configuration as config } from '../configuration';
+import cors = require('cors');
+import { Behaviour_names, BPMNServer, dateDiff, Definition, ExecutionContext, Node } from 'bpmn-server';
+import { EventEmitter } from 'events';
+import { MyBpmnServer } from '../src/myBpmnServer';
+
+router.use(cors());
+
+
+
+const bpmnServer = new MyBpmnServer(config);
 
 const definitions = bpmnServer.definitions;
 
@@ -25,7 +35,7 @@ const awaitAppDelegateFactory = (middleware) => {
         }
     }
 }
-   {
+{
     router.get('/datastore/findItems', awaitAppDelegateFactory(async (request, response) => {
 
         console.log(request.body);
@@ -38,17 +48,18 @@ const awaitAppDelegateFactory = (middleware) => {
         let items;
         let errors;
         try {
-            items= await bpmnServer.dataStore.findItems(query);
+            items = await bpmnServer.dataStore.findItems(query);
         }
         catch (exc) {
             errors = exc.toString();
             console.log(errors);
         }
-        response.json({ errors: errors, items});
+        response.json({ errors: errors, items });
     }));
 
     router.get('/datastore/findInstances', awaitAppDelegateFactory(async (request, response) => {
 
+        console.log('/datastore/findInstances');
 
         console.log(request.body);
         let query;
@@ -60,8 +71,10 @@ const awaitAppDelegateFactory = (middleware) => {
         let instances;
         let errors;
         try {
-            instances = await bpmnServer.dataStore.findInstances(query,'full');
+            instances = await bpmnServer.dataStore.findInstances(query, 'summary');
+            console.log(instances.length);
         }
+
         catch (exc) {
             errors = exc.toString();
             console.log(errors);
@@ -69,18 +82,52 @@ const awaitAppDelegateFactory = (middleware) => {
         response.json({ errors: errors, instances });
     }));
 
+    router.get('/getFields', awaitAppDelegateFactory(async (request, response) => {
+
+        try{
+            let name: string = request.query.name;
+            let nodeId: string = request.query.nodeId;
+            let fields: Array<any> = await getFields(name, nodeId);
+            response.json(fields);
+        }
+        catch (err){
+            response.json({ error: err.toString() });
+        }
+
+    }));
+
+    router.get('/getOutputParameters', awaitAppDelegateFactory(async (request, response) => {
+
+        try{
+            let name: string = request.query.name;
+            
+            let nodeId: string = request.query.nodeId;
+            
+            let definition: Definition = await bpmnServer.definitions.load(name);
+            let node: Node = definition.getNodeById(nodeId);
+            let values = node.def.extensionElements.values;
+
+            let inputOutput = values.find(value => value.$type == 'camunda:inputOutput');
+            let outputs = inputOutput.$children.filter(child => child.$type == 'camunda:outputParameter');
+
+            response.json(outputs);
+        }
+        catch (err){
+            response.json({ error: err.toString() });
+        }
+
+    }));
+
     router.post('/engine/start/:name?', awaitAppDelegateFactory(async (request, response) => {
 
         try {
-        let name = request.params.name;
-        if (!name)
-            name = request.body.name;
-        console.log(' starting ' + name);
-        console.log(request.body);
-        let data = request.body.data;
-        let context;
-        console.log(data);
-            context = await bpmnServer.engine.start(name, data);
+            let name = request.params.name;
+            if (!name)
+                name = request.body.name;
+
+            let data = request.body.data;
+            console.log(data);
+            let context = await bpmnServer.engine.start(name, data);
             response.json(context.instance);
         }
         catch (exc) {
@@ -105,6 +152,10 @@ const awaitAppDelegateFactory = (middleware) => {
         let errors;
         try {
             context = await bpmnServer.engine.invoke(query, data);
+
+            
+            console.log(context.listener.eventNames());
+
             instance = context.instance;
             if (context && context.errors)
                 errors = context.errors.toString();
@@ -114,8 +165,6 @@ const awaitAppDelegateFactory = (middleware) => {
             console.log(errors);
         }
         response.json({ errors: errors, instance });
-
-
     }));
 
     router.get('/engine/get', awaitAppDelegateFactory(async (request, response) => {
@@ -138,22 +187,21 @@ const awaitAppDelegateFactory = (middleware) => {
             errors = exc.toString();
             console.log(errors);
         }
-        response.json({errors: errors, instance});
+        response.json({ errors: errors, instance });
     }));
 
 
-    router.get('/definitions/list',async function (req, response) {
+    router.get('/definitions/list', async function (req, response) {
 
         let list = await bpmnServer.definitions.getList();
-         console.log(list);
         response.json(list);
     });
-    router.get('/definitions/load/:name?',async function (request, response) {
+    router.get('/definitions/load/:name?', async function (request, response) {
 
         console.log(request.params);
         let name = request.params.name;
 
-        let definition= await bpmnServer.definitions.load(name);
+        let definition = await bpmnServer.definitions.load(name);
         response.json(JSON.parse(definition.getJson()));
     });
 
@@ -205,10 +253,10 @@ const awaitAppDelegateFactory = (middleware) => {
          * 
          * 
     export async function WebService(request, response) {
-	console.log(request);
-	console.log(response);
-	let { definition, data, options, loadFrom } = request.body;
-	response.json(Execute(request.body));
+    console.log(request);
+    console.log(response);
+    let { definition, data, options, loadFrom } = request.body;
+    response.json(Execute(request.body));
 }
          */
         try {
@@ -217,7 +265,7 @@ const awaitAppDelegateFactory = (middleware) => {
         }
         catch (exc) {
             console.log(exc);
-            response.json({ errors: JSON.stringify(exc,null,2)});
+            response.json({ errors: JSON.stringify(exc, null, 2) });
         }
     }));
 
@@ -227,7 +275,7 @@ async function displayError(res, error) {
 
     if (typeof error === 'object') {
         if (error.message) {
-//            msg += error.message;
+            //            msg += error.message;
             msg += '<br/>Error Message: ' + error.message;
         }
         if (error.stack) {
@@ -236,7 +284,7 @@ async function displayError(res, error) {
             msg += error.stack.split('\n').join('<br/>');
         }
     } else {
-        msg +=error;
+        msg += error;
     }
     res.send(msg);
 
@@ -244,8 +292,8 @@ async function displayError(res, error) {
 async function display(res, title, output, logs = [], items = []) {
 
     console.log(" Display Started");
-    var instances = await bpmnServer.dataStore.findInstances({},'full');
-    let waiting = await bpmnServer.dataStore.findItems({ items: { status: 'wait' } }); 
+    var instances = await bpmnServer.dataStore.findInstances({}, 'full');
+    let waiting = await bpmnServer.dataStore.findItems({ items: { status: 'wait' } });
 
     waiting.forEach(item => {
         item.fromNow = dateDiff(item.startedAt);
@@ -254,9 +302,9 @@ async function display(res, title, output, logs = [], items = []) {
     let engines = bpmnServer.cache.list();
 
     engines.forEach(engine => {
-        engine.fromNow = dateDiff(engine.startedAt); 
-        engine.fromLast = dateDiff(engine.lastAt); 
-        });
+        engine.fromNow = dateDiff(engine.startedAt);
+        engine.fromLast = dateDiff(engine.lastAt);
+    });
 
     instances.forEach(item => {
         item.fromNow = dateDiff(item.startedAt);
@@ -281,9 +329,9 @@ async function display(res, title, output, logs = [], items = []) {
 function show(output) {
     return output;
 }
-async function instanceDetails(response,instanceId) {
+async function instanceDetails(response, instanceId) {
     let result = await bpmnServer.dataStore.loadInstance(instanceId);
-//    let items = await bpmnServer.findItems({ id : instanceId });
+    //    let items = await bpmnServer.findItems({ id : instanceId });
     const instance = result.instance;
 
     let logs = instance.logs;
@@ -308,11 +356,11 @@ async function instanceDetails(response,instanceId) {
     let vars = [];
     Object.keys(instance.data).forEach(function (key) {
         let value = instance.data[key];
-        if (Array.isArray(value)) 
+        if (Array.isArray(value))
             value = JSON.stringify(value);
         if (typeof value === 'object' && value !== null)
             value = JSON.stringify(value);
-        
+
         vars.push({ key, value });
     });
 
@@ -322,8 +370,8 @@ async function instanceDetails(response,instanceId) {
         {
             instance, vars,
             title: 'Instance Details',
-            logs,items: result.items, svg,
-            decorations , definition:defJson, lastItem
+            logs, items: result.items, svg,
+            decorations, definition: defJson, lastItem
         });
 
 }
