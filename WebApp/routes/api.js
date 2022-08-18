@@ -14,9 +14,13 @@ const router = express.Router();
 var bodyParser = require('body-parser');
 const dmn_engine_1 = require("dmn-engine");
 const FS = require('fs');
-const __1 = require("..");
+// import { BPMNServer, dateDiff, Behaviour_names } from '..';
 const configuration_1 = require("../configuration");
-const bpmnServer = new __1.BPMNServer(configuration_1.configuration);
+const cors = require("cors");
+const bpmn_server_1 = require("bpmn-server");
+const myBpmnServer_1 = require("../src/myBpmnServer");
+router.use(cors());
+const bpmnServer = new myBpmnServer_1.MyBpmnServer(configuration_1.configuration);
 const definitions = bpmnServer.definitions;
 var caseId = Math.floor(Math.random() * 10000);
 /* GET users listing. */
@@ -50,6 +54,7 @@ const awaitAppDelegateFactory = (middleware) => {
         response.json({ errors: errors, items });
     })));
     router.get('/datastore/findInstances', awaitAppDelegateFactory((request, response) => __awaiter(void 0, void 0, void 0, function* () {
+        console.log('/datastore/findInstances');
         console.log(request.body);
         let query;
         if (request.body.query) {
@@ -59,7 +64,8 @@ const awaitAppDelegateFactory = (middleware) => {
         let instances;
         let errors;
         try {
-            instances = yield bpmnServer.dataStore.findInstances(query, 'full');
+            instances = yield bpmnServer.dataStore.findInstances(query, 'summary');
+            console.log(instances.length);
         }
         catch (exc) {
             errors = exc.toString();
@@ -67,17 +73,40 @@ const awaitAppDelegateFactory = (middleware) => {
         }
         response.json({ errors: errors, instances });
     })));
+    router.get('/getFields', awaitAppDelegateFactory((request, response) => __awaiter(void 0, void 0, void 0, function* () {
+        try {
+            let name = request.query.name;
+            let nodeId = request.query.nodeId;
+            let fields = yield getFields(name, nodeId);
+            response.json(fields);
+        }
+        catch (err) {
+            response.json({ error: err.toString() });
+        }
+    })));
+    router.get('/getOutputParameters', awaitAppDelegateFactory((request, response) => __awaiter(void 0, void 0, void 0, function* () {
+        try {
+            let name = request.query.name;
+            let nodeId = request.query.nodeId;
+            let definition = yield bpmnServer.definitions.load(name);
+            let node = definition.getNodeById(nodeId);
+            let values = node.def.extensionElements.values;
+            let inputOutput = values.find(value => value.$type == 'camunda:inputOutput');
+            let outputs = inputOutput.$children.filter(child => child.$type == 'camunda:outputParameter');
+            response.json(outputs);
+        }
+        catch (err) {
+            response.json({ error: err.toString() });
+        }
+    })));
     router.post('/engine/start/:name?', awaitAppDelegateFactory((request, response) => __awaiter(void 0, void 0, void 0, function* () {
         try {
             let name = request.params.name;
             if (!name)
                 name = request.body.name;
-            console.log(' starting ' + name);
-            console.log(request.body);
             let data = request.body.data;
-            let context;
             console.log(data);
-            context = yield bpmnServer.engine.start(name, data);
+            let context = yield bpmnServer.engine.start(name, data);
             response.json(context.instance);
         }
         catch (exc) {
@@ -99,6 +128,7 @@ const awaitAppDelegateFactory = (middleware) => {
         let errors;
         try {
             context = yield bpmnServer.engine.invoke(query, data);
+            console.log(context.listener.eventNames());
             instance = context.instance;
             if (context && context.errors)
                 errors = context.errors.toString();
@@ -132,7 +162,6 @@ const awaitAppDelegateFactory = (middleware) => {
     router.get('/definitions/list', function (req, response) {
         return __awaiter(this, void 0, void 0, function* () {
             let list = yield bpmnServer.definitions.getList();
-            console.log(list);
             response.json(list);
         });
     });
@@ -192,7 +221,7 @@ const awaitAppDelegateFactory = (middleware) => {
 }
          */
         try {
-            yield response.json(dmn_engine_1.ExecuteDecisionTable(request.body));
+            yield response.json((0, dmn_engine_1.ExecuteDecisionTable)(request.body));
             //await WebService(request, response);
         }
         catch (exc) {
@@ -227,17 +256,17 @@ function display(res, title, output, logs = [], items = []) {
         var instances = yield bpmnServer.dataStore.findInstances({}, 'full');
         let waiting = yield bpmnServer.dataStore.findItems({ items: { status: 'wait' } });
         waiting.forEach(item => {
-            item.fromNow = __1.dateDiff(item.startedAt);
+            item.fromNow = (0, bpmn_server_1.dateDiff)(item.startedAt);
         });
         let engines = bpmnServer.cache.list();
         engines.forEach(engine => {
-            engine.fromNow = __1.dateDiff(engine.startedAt);
-            engine.fromLast = __1.dateDiff(engine.lastAt);
+            engine.fromNow = (0, bpmn_server_1.dateDiff)(engine.startedAt);
+            engine.fromLast = (0, bpmn_server_1.dateDiff)(engine.lastAt);
         });
         instances.forEach(item => {
-            item.fromNow = __1.dateDiff(item.startedAt);
+            item.fromNow = (0, bpmn_server_1.dateDiff)(item.startedAt);
             if (item.endedAt)
-                item.endFromNow = __1.dateDiff(item.endedAt);
+                item.endFromNow = (0, bpmn_server_1.dateDiff)(item.endedAt);
             else
                 item.endFromNow = '';
         });
@@ -295,7 +324,7 @@ function getFields(processName, elementId) {
     return __awaiter(this, void 0, void 0, function* () {
         let definition = yield bpmnServer.definitions.load(processName);
         let node = definition.getNodeById(elementId);
-        let extName = __1.Behaviour_names.CamundaFormData;
+        let extName = bpmn_server_1.Behaviour_names.CamundaFormData;
         console.log("ext name:" + extName);
         let ext = node.getBehaviour(extName);
         if (ext) {
